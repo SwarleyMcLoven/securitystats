@@ -1,0 +1,88 @@
+# .NET Core
+bin/
+obj/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ASP.NET Core secrets
+secrets.json
+
+# Build results
+artifacts/
+
+# Rider
+.idea/
+
+# Visual Studio Code
+.vscode/
+
+# Visual Studio
+.vs/
+*.vs/
+
+# NuGet packages
+*.nupkg
+*.snupkg
+packages/
+*.nuspec
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# User-specific files
+*.swp
+*.swo
+
+# Environment settings
+.env
+.env.*
+
+# Publish output
+wwwroot/dist/
+publish/
+appsettings.Development.json
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.db.backup
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Claude generated code (customize this path if needed)
+Claude/
+ClaudeGenerated/
+ClaudeOutput/
+*ClaudeGenerated.cs
+.claude/
+
+# Docker
+**/docker-compose.override.yml
+docker-compose.debug.yml
+docker-compose.release.yml
+
+# Node / NPM (if you use npm for frontend assets)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Optional: ignore test result outputs
+TestResults/
+coverage/
+
+# Optional: Ignore JetBrains Rider and ReSharper artifacts
+.idea/
+*.DotSettings.user
+.ReSharper/

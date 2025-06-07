@@ -1,0 +1,676 @@
+@page "/settings"
+@using SecurityStats.Models
+@using SecurityStats.Services
+@inject UserService UserService
+@inject GitHubAppService GitHubAppService
+@inject IJSRuntime JSRuntime
+@inject ILogger<Settings> _logger
+
+<PageTitle>Settings</PageTitle>
+
+<h1>Settings</h1>
+
+@if (isLoading)
+{
+    <div class="text-center">
+        <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading settings...</span>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>GitHub App Configuration</h5>
+                </div>
+                <div class="card-body">
+                    @if (GitHubAppService.IsConfigured())
+                    {
+                        <div class="alert alert-success">
+                            <i class="oi oi-check"></i> GitHub App is configured
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>App ID:</strong> @appConfig.AppId
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Client ID:</strong> @appConfig.ClientId
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-warning">
+                            <i class="oi oi-warning"></i> GitHub App is not configured. Please update your appsettings.json file.
+                        </div>
+                        
+                        <p>Add the following configuration to your appsettings.json:</p>
+                        <pre><code>"GitHubApp": {
+  "AppId": "your-app-id",
+  "ClientId": "your-client-id", 
+  "ClientSecret": "your-client-secret",
+  "PrivateKey": "your-private-key",
+  "WebhookSecret": "your-webhook-secret"
+}</code></pre>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5>GitHub Installations</h5>
+                    @if (GitHubAppService.IsConfigured())
+                    {
+                        <button class="btn btn-primary btn-sm" @onclick="AddNewInstallation">
+                            <i class="oi oi-plus"></i> Add Installation
+                        </button>
+                    }
+                </div>
+                <div class="card-body">
+                    @if (installations.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Organization</th>
+                                        <th>Type</th>
+                                        <th>Status</th>
+                                        <th>Repositories</th>
+                                        <th>Last Sync</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var installation in installations)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    @if (!string.IsNullOrEmpty(installation.AvatarUrl))
+                                                    {
+                                                        <img src="@installation.AvatarUrl" alt="@installation.OrganizationName" class="rounded-circle me-2" width="24" height="24">
+                                                    }
+                                                    <span>@installation.OrganizationName</span>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-secondary">@installation.AccountType</span>
+                                            </td>
+                                            <td>
+                                                <span class="badge @GetStatusBadgeClass(installation.Status)">
+                                                    @installation.Status
+                                                </span>
+                                                @if (!string.IsNullOrEmpty(installation.StatusMessage))
+                                                {
+                                                    <div class="small text-muted">@installation.StatusMessage</div>
+                                                }
+                                            </td>
+                                            <td>@installation.RepositoryCount</td>
+                                            <td>
+                                                @if (installation.LastSyncAt.HasValue)
+                                                {
+                                                    @installation.LastSyncAt.Value.ToString("yyyy-MM-dd HH:mm")
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">Never</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm">
+                                                    <button class="btn btn-outline-primary" @onclick="() => CheckInstallationStatus(installation)">
+                                                        <i class="oi oi-reload"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-info" @onclick="() => ViewInstallation(installation)">
+                                                        <i class="oi oi-eye"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-danger" @onclick="() => RemoveInstallation(installation)">
+                                                        <i class="oi oi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted">
+                            <p>No GitHub installations found.</p>
+                            @if (GitHubAppService.IsConfigured())
+                            {
+                                <p>Click "Add Installation" to connect your first GitHub organization.</p>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Work Item Configuration</h5>
+                </div>
+                <div class="card-body">
+                    @if (workItemConfig != null)
+                    {
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="enableWorkItems" 
+                                   @bind="workItemConfig.IsEnabled" @bind:after="OnWorkItemEnabledChanged">
+                            <label class="form-check-label" for="enableWorkItems">
+                                Enable automatic work item creation
+                            </label>
+                        </div>
+
+                        @if (workItemConfig.IsEnabled)
+                        {
+                            <div class="mb-3">
+                                <label for="defaultProject" class="form-label">Default Project (optional)</label>
+                                <select class="form-select" id="defaultProject" @bind="selectedDefaultProject" @bind:after="OnDefaultProjectChanged">
+                                    <option value="">No default project</option>
+                                    @foreach (var project in availableProjects)
+                                    {
+                                        <option value="@project.Id">@project.Name (@(project.IsOrganizationProject ? "Organization" : "Repository"))</option>
+                                    }
+                                </select>
+                                <div class="form-text">Work items will be created in this project unless overridden by specific rules</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6>Automation Rules</h6>
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="AddNewRule">
+                                        <i class="oi oi-plus"></i> Add Rule
+                                    </button>
+                                </div>
+
+                                @if (workItemConfig.Rules.Any())
+                                {
+                                    <div class="table-responsive">
+                                        <table class="table table-sm">
+                                            <thead>
+                                                <tr>
+                                                    <th>Enabled</th>
+                                                    <th>Minimum Severity</th>
+                                                    <th>Vulnerability Types</th>
+                                                    <th>Project</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var rule in workItemConfig.Rules)
+                                                {
+                                                    <tr>
+                                                        <td>
+                                                            <input class="form-check-input" type="checkbox" 
+                                                                   @bind="rule.IsEnabled" @bind:after="OnRuleChanged">
+                                                        </td>
+                                                        <td>
+                                                            <select class="form-select form-select-sm" @bind="rule.MinimumSeverity" @bind:after="OnRuleChanged">
+                                                                @foreach (var severity in Enum.GetValues<VulnerabilitySeverity>())
+                                                                {
+                                                                    <option value="@severity">@severity</option>
+                                                                }
+                                                            </select>
+                                                        </td>
+                                                        <td>
+                                                            <select class="form-select form-select-sm" @bind="selectedVulnTypes[rule.Id]" @bind:after="async () => await OnVulnTypesChanged(rule)">
+                                                                <option value="">All Types</option>
+                                                                @foreach (var type in Enum.GetValues<VulnerabilityType>())
+                                                                {
+                                                                    <option value="@type">@type</option>
+                                                                }
+                                                            </select>
+                                                        </td>
+                                                        <td>
+                                                            <select class="form-select form-select-sm" @bind="selectedRuleProjects[rule.Id]" @bind:after="async () => await OnRuleProjectChanged(rule)">
+                                                                <option value="">Use default project</option>
+                                                                @foreach (var project in availableProjects)
+                                                                {
+                                                                    <option value="@project.Id">@project.Name</option>
+                                                                }
+                                                            </select>
+                                                        </td>
+                                                        <td>
+                                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveRule(rule)">
+                                                                <i class="oi oi-trash"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="text-muted text-center py-3">
+                                        No rules configured. Add a rule to start automatically creating work items.
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="mt-3">
+                                <button class="btn btn-primary" @onclick="SaveWorkItemConfiguration" disabled="@isSaving">
+                                    @if (isSaving)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                    }
+                                    Save Configuration
+                                </button>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="text-center">
+                            <div class="spinner-border spinner-border-sm" role="status">
+                                <span class="visually-hidden">Loading work item configuration...</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (selectedInstallation != null)
+    {
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Installation Details: @selectedInstallation.OrganizationName</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Installation ID:</strong> @selectedInstallation.InstallationId
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Account ID:</strong> @selectedInstallation.AccountId
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Installed:</strong> @selectedInstallation.InstalledAt.ToString("yyyy-MM-dd HH:mm")
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Active:</strong> @(selectedInstallation.IsActive ? "Yes" : "No")
+                            </div>
+                        </div>
+
+                        @if (selectedInstallation.RepositorySelection.Any())
+                        {
+                            <div class="mt-3">
+                                <strong>Repositories:</strong>
+                                <div class="mt-2">
+                                    @foreach (var repo in selectedInstallation.RepositorySelection)
+                                    {
+                                        <span class="badge bg-light text-dark me-1 mb-1">@repo</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <div class="mt-3">
+                            <button class="btn btn-primary" @onclick="() => RefreshInstallationToken(selectedInstallation)">
+                                Refresh Token
+                            </button>
+                            <button class="btn btn-secondary" @onclick="() => selectedInstallation = null">
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger mt-3">
+        @errorMessage
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(successMessage))
+{
+    <div class="alert alert-success mt-3">
+        @successMessage
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private List<GitHubAppInstallation> installations = new();
+    private GitHubAppInstallation? selectedInstallation;
+    private GitHubAppConfiguration appConfig = new();
+    private WorkItemConfiguration? workItemConfig;
+    private Dictionary<int, string> selectedVulnTypes = new();
+    private Dictionary<int, string> selectedRuleProjects = new();
+    private List<GitHubProject> availableProjects = new();
+    private string selectedDefaultProject = "";
+    private bool isSaving = false;
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+    private string currentUserId = "demo-user"; // In real app, get from authentication
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+
+        try
+        {
+            appConfig = GitHubAppService.GetAppConfiguration();
+            
+            var user = await UserService.GetOrCreateUserAsync(currentUserId);
+            installations = await UserService.GetUserGitHubInstallationsAsync(user.Id);
+            workItemConfig = await UserService.GetWorkItemConfigurationAsync(user.Id);
+            
+            if (workItemConfig == null)
+            {
+                workItemConfig = new WorkItemConfiguration { UserId = user.Id };
+            }
+            
+            // Load available projects from all installations
+            await LoadAvailableProjectsAsync();
+            
+            // Initialize selection dictionaries
+            selectedDefaultProject = workItemConfig.DefaultProjectId?.ToString() ?? "";
+            
+            foreach (var rule in workItemConfig.Rules)
+            {
+                selectedVulnTypes[rule.Id] = rule.VulnerabilityTypes?.FirstOrDefault().ToString() ?? "";
+                selectedRuleProjects[rule.Id] = rule.ProjectId?.ToString() ?? "";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading settings: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AddNewInstallation()
+    {
+        try
+        {
+            var installUrl = await GitHubAppService.GetInstallationUrlAsync();
+            await JSRuntime.InvokeVoidAsync("open", installUrl, "_blank");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error starting installation: {ex.Message}";
+        }
+    }
+
+    private async Task CheckInstallationStatus(GitHubAppInstallation installation)
+    {
+        try
+        {
+            installation.LastStatusCheck = DateTime.UtcNow;
+            
+            // Try to get repositories to test the installation
+            var repositories = await GitHubAppService.GetInstallationRepositoriesAsync(installation.InstallationId);
+            
+            installation.Status = InstallationStatus.Active;
+            installation.StatusMessage = "Installation is working correctly";
+            installation.RepositoryCount = repositories.Count;
+            installation.LastSyncAt = DateTime.UtcNow;
+            
+            await UserService.SaveGitHubInstallationAsync(currentUserId, installation);
+            
+            successMessage = $"Status check completed for {installation.OrganizationName}";
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            installation.Status = InstallationStatus.Error;
+            installation.StatusMessage = ex.Message;
+            await UserService.SaveGitHubInstallationAsync(currentUserId, installation);
+            
+            errorMessage = $"Error checking status for {installation.OrganizationName}: {ex.Message}";
+            await LoadData();
+        }
+    }
+
+    private void ViewInstallation(GitHubAppInstallation installation)
+    {
+        selectedInstallation = installation;
+        StateHasChanged();
+    }
+
+    private async Task RemoveInstallation(GitHubAppInstallation installation)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to remove the installation for {installation.OrganizationName}?"))
+        {
+            try
+            {
+                installation.IsActive = false;
+                installation.Status = InstallationStatus.Removed;
+                installation.StatusMessage = "Removed by user";
+                
+                await UserService.SaveGitHubInstallationAsync(currentUserId, installation);
+                
+                successMessage = $"Installation for {installation.OrganizationName} has been removed";
+                await LoadData();
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Error removing installation: {ex.Message}";
+            }
+        }
+    }
+
+    private async Task RefreshInstallationToken(GitHubAppInstallation installation)
+    {
+        try
+        {
+            await GitHubAppService.RefreshInstallationTokenAsync(installation);
+            successMessage = $"Token refreshed for {installation.OrganizationName}";
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error refreshing token: {ex.Message}";
+        }
+    }
+
+    private string GetStatusBadgeClass(InstallationStatus status)
+    {
+        return status switch
+        {
+            InstallationStatus.Active => "bg-success",
+            InstallationStatus.Suspended => "bg-warning",
+            InstallationStatus.Removed => "bg-secondary",
+            InstallationStatus.Error => "bg-danger",
+            InstallationStatus.TokenExpired => "bg-warning",
+            InstallationStatus.ConfigurationError => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
+
+    private async Task OnWorkItemEnabledChanged()
+    {
+        if (workItemConfig != null)
+        {
+            workItemConfig.UpdatedAt = DateTime.UtcNow;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnRuleChanged()
+    {
+        if (workItemConfig != null)
+        {
+            workItemConfig.UpdatedAt = DateTime.UtcNow;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnVulnTypesChanged(WorkItemRule rule)
+    {
+        var selectedValue = selectedVulnTypes[rule.Id];
+        
+        if (string.IsNullOrEmpty(selectedValue))
+        {
+            rule.VulnerabilityTypes = null;
+        }
+        else if (Enum.TryParse<VulnerabilityType>(selectedValue, out var vulnType))
+        {
+            rule.VulnerabilityTypes = new[] { vulnType };
+        }
+
+        await OnRuleChanged();
+    }
+
+    private void AddNewRule()
+    {
+        if (workItemConfig != null)
+        {
+            var newRule = new WorkItemRule
+            {
+                WorkItemConfigurationId = workItemConfig.Id,
+                MinimumSeverity = VulnerabilitySeverity.High,
+                IsEnabled = true
+            };
+            
+            workItemConfig.Rules.Add(newRule);
+            selectedVulnTypes[newRule.Id] = "";
+            selectedRuleProjects[newRule.Id] = "";
+            workItemConfig.UpdatedAt = DateTime.UtcNow;
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveRule(WorkItemRule rule)
+    {
+        if (workItemConfig != null)
+        {
+            workItemConfig.Rules.Remove(rule);
+            selectedVulnTypes.Remove(rule.Id);
+            selectedRuleProjects.Remove(rule.Id);
+            workItemConfig.UpdatedAt = DateTime.UtcNow;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveWorkItemConfiguration()
+    {
+        if (workItemConfig == null) return;
+
+        isSaving = true;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+        
+        try
+        {
+            await UserService.SaveWorkItemConfigurationAsync(workItemConfig);
+            successMessage = "Work item configuration saved successfully";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error saving work item configuration: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAvailableProjectsAsync()
+    {
+        availableProjects.Clear();
+        
+        foreach (var installation in installations.Where(i => i.IsActive))
+        {
+            try
+            {
+                // Get organization projects
+                var orgProjects = await GitHubAppService.GetOrganizationProjectsAsync(installation.InstallationId, installation.OrganizationName);
+                availableProjects.AddRange(orgProjects);
+                
+                // Get repository projects for each repository
+                foreach (var repoName in installation.RepositorySelection)
+                {
+                    var parts = repoName.Split('/');
+                    if (parts.Length == 2)
+                    {
+                        var repoProjects = await GitHubAppService.GetRepositoryProjectsAsync(installation.InstallationId, parts[0], parts[1]);
+                        availableProjects.AddRange(repoProjects);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load projects for installation {InstallationId}", installation.InstallationId);
+            }
+        }
+    }
+
+    private async Task OnDefaultProjectChanged()
+    {
+        if (workItemConfig != null)
+        {
+            if (long.TryParse(selectedDefaultProject, out var projectId))
+            {
+                workItemConfig.DefaultProjectId = projectId;
+                var project = availableProjects.FirstOrDefault(p => p.Id == projectId);
+                workItemConfig.DefaultProjectName = project?.Name;
+            }
+            else
+            {
+                workItemConfig.DefaultProjectId = null;
+                workItemConfig.DefaultProjectName = null;
+            }
+            
+            workItemConfig.UpdatedAt = DateTime.UtcNow;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnRuleProjectChanged(WorkItemRule rule)
+    {
+        var selectedProjectId = selectedRuleProjects[rule.Id];
+        
+        if (long.TryParse(selectedProjectId, out var projectId))
+        {
+            rule.ProjectId = projectId;
+            var project = availableProjects.FirstOrDefault(p => p.Id == projectId);
+            rule.ProjectName = project?.Name;
+        }
+        else
+        {
+            rule.ProjectId = null;
+            rule.ProjectName = null;
+        }
+
+        await OnRuleChanged();
+    }
+}

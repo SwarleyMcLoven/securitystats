@@ -1,0 +1,394 @@
+@page "/commits"
+@using SecurityStats.Models
+@using SecurityStats.Services
+@inject CommitAnalysisService CommitAnalysisService
+@inject UserService UserService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Commit Analysis</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Commit Analysis</h1>
+    <div class="d-flex align-items-center">
+        <label for="daysBack" class="me-2">Days Back:</label>
+        <input type="number" id="daysBack" class="form-control" style="width: 80px;" @bind="daysBack" min="1" max="90">
+        <label for="orgSelect" class="me-2 ms-3">Organization:</label>
+        <select id="orgSelect" class="form-select" style="width: auto;" @bind="selectedInstallationId">
+            <option value="">All Organizations</option>
+            @foreach (var installation in installations)
+            {
+                <option value="@installation.InstallationId">
+                    @installation.OrganizationName
+                </option>
+            }
+        </select>
+        <button class="btn btn-primary btn-sm ms-2" @onclick="AnalyzeCommits">
+            <i class="oi oi-magnifying-glass"></i> Analyze
+        </button>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center">
+        <div class="spinner-border" role="status">
+            <span class="visually-hidden">Analyzing commits...</span>
+        </div>
+        <p>Analyzing commits and correlating with vulnerabilities...</p>
+    </div>
+}
+else if (analyses.Any())
+{
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Total Commits</h5>
+                    <h2 class="text-primary">@analyses.Sum(a => a.TotalCommits)</h2>
+                    <small class="text-muted">Last @daysBack days</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Unique Authors</h5>
+                    <h2 class="text-info">@analyses.SelectMany(a => a.AuthorStatistics).GroupBy(a => a.AuthorEmail).Count()</h2>
+                    <small class="text-muted">Distinct contributors</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Commits with Vulnerabilities</h5>
+                    <h2 class="text-warning">@analyses.Sum(a => a.CommitsWithVulnerabilities)</h2>
+                    <small class="text-muted">@GetVulnerabilityPercentage()% of total</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Repositories</h5>
+                    <h2 class="text-success">@analyses.Count</h2>
+                    <small class="text-muted">Analyzed repositories</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5>Repository Analysis</h5>
+                    <div>
+                        <input type="text" class="form-control form-control-sm" placeholder="Search repositories..." @bind="searchTerm" @oninput="FilterResults" style="width: 200px;">
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Repository</th>
+                                    <th>Total Commits</th>
+                                    <th>Authors</th>
+                                    <th>Commits w/ Vulnerabilities</th>
+                                    <th>Vulnerability Rate</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var analysis in filteredAnalyses.Take(20))
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong>@analysis.Repository</strong>
+                                            <br>
+                                            <small class="text-muted">@analysis.RepositoryFullName</small>
+                                        </td>
+                                        <td>@analysis.TotalCommits</td>
+                                        <td>@analysis.DistinctAuthors</td>
+                                        <td>
+                                            <span class="badge @(analysis.CommitsWithVulnerabilities > 0 ? "bg-warning" : "bg-success")">
+                                                @analysis.CommitsWithVulnerabilities
+                                            </span>
+                                        </td>
+                                        <td>
+                                            @{
+                                                var rate = analysis.TotalCommits > 0 ? (double)analysis.CommitsWithVulnerabilities / analysis.TotalCommits * 100 : 0;
+                                            }
+                                            <span class="badge @GetRateBadgeClass(rate)">
+                                                @rate.ToString("F1")%
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => ViewDetails(analysis)">
+                                                <i class="oi oi-eye"></i> Details
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (filteredAnalyses.Count > 20)
+                    {
+                        <div class="text-center text-muted">
+                            <small>Showing first 20 of @filteredAnalyses.Count repositories</small>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (selectedAnalysis != null)
+    {
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Author Statistics - @selectedAnalysis.Repository</h5>
+                    </div>
+                    <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Author</th>
+                                        <th>Commits</th>
+                                        <th>w/ Vulnerabilities</th>
+                                        <th>Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var author in selectedAnalysis.AuthorStatistics.Take(10))
+                                    {
+                                        <tr>
+                                            <td>
+                                                <strong>@author.AuthorName</strong>
+                                                <br>
+                                                <small class="text-muted">@author.AuthorEmail</small>
+                                            </td>
+                                            <td>@author.CommitCount</td>
+                                            <td>
+                                                <span class="badge @(author.CommitsWithVulnerabilities > 0 ? "bg-warning" : "bg-success")">
+                                                    @author.CommitsWithVulnerabilities
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="badge @GetRateBadgeClass(author.VulnerabilityRate)">
+                                                    @author.VulnerabilityRate.ToString("F1")%
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Recent Commits - @selectedAnalysis.Repository</h5>
+                    </div>
+                    <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                        @foreach (var commit in selectedAnalysis.Commits.Take(10))
+                        {
+                            <div class="border-bottom mb-2 pb-2">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <strong>@commit.Message.Split('\n')[0]</strong>
+                                        @if (commit.HasVulnerabilities)
+                                        {
+                                            <span class="badge bg-warning ms-2">
+                                                <i class="oi oi-warning"></i> @commit.AssociatedVulnerabilities.Count
+                                            </span>
+                                        }
+                                        <br>
+                                        <small class="text-muted">
+                                            @commit.AuthorName • @commit.CommitDate.ToString("yyyy-MM-dd HH:mm")
+                                        </small>
+                                    </div>
+                                    <div>
+                                        <a href="@commit.CommitUrl" target="_blank" class="btn btn-sm btn-outline-primary">
+                                            <i class="oi oi-external-link"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                                
+                                @if (commit.HasVulnerabilities)
+                                {
+                                    <div class="mt-2">
+                                        @foreach (var vuln in commit.AssociatedVulnerabilities.Take(3))
+                                        {
+                                            <div class="small">
+                                                <span class="badge @GetSeverityBadgeClass(vuln.Severity) me-1">@vuln.Severity</span>
+                                                @vuln.Title (@vuln.Reason)
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                
+                                <div class="mt-1">
+                                    <small class="text-success">+@commit.AddedLines</small>
+                                    <small class="text-danger ms-2">-@commit.DeletedLines</small>
+                                    <small class="text-muted ms-2">@commit.ModifiedFiles.Count files</small>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-3">
+            <div class="col-md-12">
+                <button class="btn btn-secondary" @onclick="CloseDetails">
+                    Close Details
+                </button>
+            </div>
+        </div>
+    }
+}
+else if (!isLoading)
+{
+    <div class="text-center text-muted">
+        <p>No commit analysis data available.</p>
+        <p>Click "Analyze" to start analyzing commits for the selected time period.</p>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger mt-3">
+        @errorMessage
+    </div>
+}
+
+@code {
+    private bool isLoading = false;
+    private List<SecurityStats.Models.CommitAnalysis> analyses = new();
+    private List<SecurityStats.Models.CommitAnalysis> filteredAnalyses = new();
+    private List<GitHubAppInstallation> installations = new();
+    private SecurityStats.Models.CommitAnalysis? selectedAnalysis;
+    private int daysBack = 14;
+    private long? selectedInstallationId = null;
+    private string searchTerm = string.Empty;
+    private string errorMessage = string.Empty;
+    private string currentUserId = "demo-user"; // In real app, get from authentication
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInstallations();
+        await AnalyzeCommits();
+    }
+
+    private async Task LoadInstallations()
+    {
+        try
+        {
+            var user = await UserService.GetOrCreateUserAsync(currentUserId);
+            installations = await UserService.GetUserGitHubInstallationsAsync(user.Id);
+            installations = installations.Where(i => i.IsActive).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading installations: {ex.Message}";
+        }
+    }
+
+    private async Task AnalyzeCommits()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        selectedAnalysis = null;
+
+        try
+        {
+            var request = new CommitAnalysisRequest
+            {
+                InstallationId = selectedInstallationId,
+                DaysBack = daysBack
+            };
+
+            analyses = await CommitAnalysisService.AnalyzeCommitsAsync(currentUserId, request);
+            FilterResults();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error analyzing commits: {ex.Message}";
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error analyzing commits: {ex}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void FilterResults()
+    {
+        if (string.IsNullOrEmpty(searchTerm))
+        {
+            filteredAnalyses = analyses;
+        }
+        else
+        {
+            filteredAnalyses = analyses.Where(a =>
+                a.Repository.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                a.RepositoryFullName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            ).ToList();
+        }
+        StateHasChanged();
+    }
+
+    private void ViewDetails(SecurityStats.Models.CommitAnalysis analysis)
+    {
+        selectedAnalysis = analysis;
+        StateHasChanged();
+    }
+
+    private void CloseDetails()
+    {
+        selectedAnalysis = null;
+        StateHasChanged();
+    }
+
+    private string GetVulnerabilityPercentage()
+    {
+        var totalCommits = analyses.Sum(a => a.TotalCommits);
+        var commitsWithVulns = analyses.Sum(a => a.CommitsWithVulnerabilities);
+        return totalCommits > 0 ? (commitsWithVulns * 100.0 / totalCommits).ToString("F1") : "0.0";
+    }
+
+    private string GetRateBadgeClass(double rate)
+    {
+        return rate switch
+        {
+            >= 20.0 => "bg-danger",
+            >= 10.0 => "bg-warning",
+            >= 5.0 => "bg-info",
+            > 0.0 => "bg-secondary",
+            _ => "bg-success"
+        };
+    }
+
+    private string GetSeverityBadgeClass(VulnerabilitySeverity severity)
+    {
+        return severity switch
+        {
+            VulnerabilitySeverity.Critical => "bg-danger",
+            VulnerabilitySeverity.High => "bg-warning",
+            VulnerabilitySeverity.Medium => "bg-info",
+            VulnerabilitySeverity.Low => "bg-success",
+            _ => "bg-secondary"
+        };
+    }
+}

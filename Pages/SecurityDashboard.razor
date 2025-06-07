@@ -1,0 +1,391 @@
+@page "/security"
+@using SecurityStats.Models
+@using SecurityStats.Services
+@inject GitHubSecurityService GitHubService
+@inject AzureSecurityService AzureService
+@inject UserService UserService
+@inject WorkItemService WorkItemService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Security Dashboard</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Security Dashboard</h1>
+    <div class="d-flex align-items-center">
+        <label for="orgSelect" class="me-2">Organization:</label>
+        <select id="orgSelect" class="form-select" style="width: auto;" @onchange="OnOrganizationChanged">
+            <option value="">All Organizations</option>
+            @foreach (var installation in installations)
+            {
+                <option value="@installation.InstallationId" selected="@(selectedInstallationId == installation.InstallationId)">
+                    @installation.OrganizationName (@installation.RepositoryCount repos)
+                </option>
+            }
+        </select>
+        <button class="btn btn-outline-secondary btn-sm ms-2" @onclick="RefreshData">
+            <i class="oi oi-reload"></i>
+        </button>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center">
+        <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p>Loading security data...</p>
+    </div>
+}
+else
+{
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-danger text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Critical</h5>
+                    <h2>@summary.VulnerabilitiesBySeverity.GetValueOrDefault(VulnerabilitySeverity.Critical, 0)</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h5 class="card-title">High</h5>
+                    <h2>@summary.VulnerabilitiesBySeverity.GetValueOrDefault(VulnerabilitySeverity.High, 0)</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Medium</h5>
+                    <h2>@summary.VulnerabilitiesBySeverity.GetValueOrDefault(VulnerabilitySeverity.Medium, 0)</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Low</h5>
+                    <h2>@summary.VulnerabilitiesBySeverity.GetValueOrDefault(VulnerabilitySeverity.Low, 0)</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Security Summary</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <strong>Total Vulnerabilities:</strong> @summary.TotalVulnerabilities
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Fixed Issues:</strong> @summary.FixedVulnerabilities
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Organizations:</strong> @installations.Count(i => i.IsActive)
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Last Updated:</strong> @summary.LastUpdated.ToString("yyyy-MM-dd HH:mm")
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Dependency Vulnerabilities (@summary.VulnerabilitiesByType.GetValueOrDefault(VulnerabilityType.Dependency, 0))</h5>
+                </div>
+                <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                    @if (dependencyVulnerabilities.Any())
+                    {
+                        @foreach (var vuln in dependencyVulnerabilities.Take(10))
+                        {
+                            <div class="border-bottom mb-2 pb-2">
+                                <div class="d-flex justify-content-between">
+                                    <strong>@vuln.PackageName</strong>
+                                    <span class="badge @GetSeverityBadgeClass(vuln.Severity)">@vuln.Severity</span>
+                                </div>
+                                <small class="text-muted">@vuln.Repository</small>
+                                <p class="mb-1">@vuln.Title</p>
+                                @if (!string.IsNullOrEmpty(vuln.FixedVersion))
+                                {
+                                    <small class="text-success">Fix available: @vuln.FixedVersion</small>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p>No dependency vulnerabilities found.</p>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Secret Vulnerabilities (@summary.VulnerabilitiesByType.GetValueOrDefault(VulnerabilityType.Secret, 0))</h5>
+                </div>
+                <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                    @if (secretVulnerabilities.Any())
+                    {
+                        @foreach (var vuln in secretVulnerabilities.Take(10))
+                        {
+                            <div class="border-bottom mb-2 pb-2">
+                                <div class="d-flex justify-content-between">
+                                    <strong>@vuln.SecretType</strong>
+                                    <span class="badge @GetSeverityBadgeClass(vuln.Severity)">@vuln.Severity</span>
+                                </div>
+                                <small class="text-muted">@vuln.Repository - @vuln.FilePath</small>
+                                <p class="mb-1">@vuln.Title</p>
+                                @if (vuln.IsActive)
+                                {
+                                    <small class="text-danger">Active secret detected</small>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p>No secret vulnerabilities found.</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Code Vulnerabilities (@summary.VulnerabilitiesByType.GetValueOrDefault(VulnerabilityType.Code, 0))</h5>
+                </div>
+                <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                    @if (codeVulnerabilities.Any())
+                    {
+                        @foreach (var vuln in codeVulnerabilities.Take(10))
+                        {
+                            <div class="border-bottom mb-2 pb-2">
+                                <div class="d-flex justify-content-between">
+                                    <strong>@vuln.Rule</strong>
+                                    <span class="badge @GetSeverityBadgeClass(vuln.Severity)">@vuln.Severity</span>
+                                </div>
+                                <small class="text-muted">@vuln.Repository - @vuln.FilePath:@vuln.LineNumber</small>
+                                <p class="mb-1">@vuln.Title</p>
+                                <small class="text-info">Category: @vuln.Category</small>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p>No code vulnerabilities found.</p>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Cloud Vulnerabilities (@summary.VulnerabilitiesByType.GetValueOrDefault(VulnerabilityType.Cloud, 0))</h5>
+                </div>
+                <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                    @if (cloudVulnerabilities.Any())
+                    {
+                        @foreach (var vuln in cloudVulnerabilities.Take(10))
+                        {
+                            <div class="border-bottom mb-2 pb-2">
+                                <div class="d-flex justify-content-between">
+                                    <strong>@vuln.AssetName</strong>
+                                    <span class="badge @GetSeverityBadgeClass(vuln.Severity)">@vuln.Severity</span>
+                                </div>
+                                <small class="text-muted">@vuln.ResourceGroup - @vuln.ResourceType</small>
+                                <p class="mb-1">@vuln.Title</p>
+                                <small class="text-info">Standard: @vuln.ComplianceStandard</small>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p>No cloud vulnerabilities found.</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <button class="btn btn-primary" @onclick="RefreshData">
+            <i class="oi oi-reload"></i> Refresh Data
+        </button>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private SecuritySummary summary = new();
+    private List<DependencyVulnerability> dependencyVulnerabilities = new();
+    private List<SecretVulnerability> secretVulnerabilities = new();
+    private List<CodeVulnerability> codeVulnerabilities = new();
+    private List<CloudVulnerability> cloudVulnerabilities = new();
+    private List<GitHubAppInstallation> installations = new();
+    private long? selectedInstallationId = null;
+    private string currentUserId = "demo-user"; // In real app, get from authentication
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSecurityData();
+    }
+
+    private async Task LoadSecurityData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Load installations first
+            var user = await UserService.GetOrCreateUserAsync(currentUserId);
+            installations = await UserService.GetUserGitHubInstallationsAsync(user.Id);
+            installations = installations.Where(i => i.IsActive).ToList();
+
+            var allDependencyVulns = new List<DependencyVulnerability>();
+            var allSecretVulns = new List<SecretVulnerability>();
+            var allCodeVulns = new List<CodeVulnerability>();
+
+            // Filter installations based on selection
+            var installationsToProcess = selectedInstallationId.HasValue 
+                ? installations.Where(i => i.InstallationId == selectedInstallationId.Value).ToList()
+                : installations;
+
+            foreach (var installation in installationsToProcess)
+            {
+                try
+                {
+                    var repositories = await GitHubService.GetRepositoriesAsync(installation.InstallationId);
+                    var orgRepositories = repositories.Where(r => r.FullName.StartsWith(installation.OrganizationName + "/")).Take(5);
+
+                    foreach (var repo in orgRepositories)
+                    {
+                        var parts = repo.FullName.Split('/');
+                        if (parts.Length == 2)
+                        {
+                            var owner = parts[0];
+                            var repoName = parts[1];
+
+                            var depVulns = await GitHubService.GetDependencyVulnerabilitiesAsync(installation, owner, repoName);
+                            var secretVulns = await GitHubService.GetSecretVulnerabilitiesAsync(installation, owner, repoName);
+                            var codeVulns = await GitHubService.GetCodeVulnerabilitiesAsync(installation, owner, repoName);
+
+                            // Create work items for new vulnerabilities
+                            await CreateWorkItemsForVulnerabilities(depVulns.Cast<VulnerabilityBase>(), repo.FullName, user);
+                            await CreateWorkItemsForVulnerabilities(secretVulns.Cast<VulnerabilityBase>(), repo.FullName, user);
+                            await CreateWorkItemsForVulnerabilities(codeVulns.Cast<VulnerabilityBase>(), repo.FullName, user);
+
+                            allDependencyVulns.AddRange(depVulns);
+                            allSecretVulns.AddRange(secretVulns);
+                            allCodeVulns.AddRange(codeVulns);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await JSRuntime.InvokeVoidAsync("console.warn", $"Error loading data for {installation.OrganizationName}: {ex.Message}");
+                }
+            }
+
+            var cloudVulns = await AzureService.GetCloudVulnerabilitiesAsync();
+
+            dependencyVulnerabilities = allDependencyVulns.OrderBy(v => v.Severity).ToList();
+            secretVulnerabilities = allSecretVulns.OrderBy(v => v.Severity).ToList();
+            codeVulnerabilities = allCodeVulns.OrderBy(v => v.Severity).ToList();
+            cloudVulnerabilities = cloudVulns.OrderBy(v => v.Severity).ToList();
+
+            var allVulnerabilities = new List<VulnerabilityBase>();
+            allVulnerabilities.AddRange(dependencyVulnerabilities);
+            allVulnerabilities.AddRange(secretVulnerabilities);
+            allVulnerabilities.AddRange(codeVulnerabilities);
+            allVulnerabilities.AddRange(cloudVulnerabilities);
+
+            summary = new SecuritySummary
+            {
+                TotalVulnerabilities = allVulnerabilities.Count,
+                VulnerabilitiesByType = allVulnerabilities.GroupBy(v => v.Type).ToDictionary(g => g.Key, g => g.Count()),
+                VulnerabilitiesBySeverity = allVulnerabilities.GroupBy(v => v.Severity).ToDictionary(g => g.Key, g => g.Count()),
+                FixedVulnerabilities = allVulnerabilities.Count(v => v.IsFixed),
+                LastUpdated = DateTime.Now
+            };
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error loading security data: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadSecurityData();
+    }
+
+    private async Task OnOrganizationChanged(ChangeEventArgs e)
+    {
+        if (long.TryParse(e.Value?.ToString(), out var installationId))
+        {
+            selectedInstallationId = installationId;
+        }
+        else
+        {
+            selectedInstallationId = null;
+        }
+        
+        await LoadSecurityData();
+    }
+
+    private string GetSeverityBadgeClass(VulnerabilitySeverity severity)
+    {
+        return severity switch
+        {
+            VulnerabilitySeverity.Critical => "bg-danger",
+            VulnerabilitySeverity.High => "bg-warning",
+            VulnerabilitySeverity.Medium => "bg-info",
+            VulnerabilitySeverity.Low => "bg-success",
+            _ => "bg-secondary"
+        };
+    }
+
+    private async Task CreateWorkItemsForVulnerabilities(IEnumerable<VulnerabilityBase> vulnerabilities, string repository, User user)
+    {
+        foreach (var vulnerability in vulnerabilities.Where(v => !v.IsFixed))
+        {
+            try
+            {
+                var issue = await WorkItemService.CreateWorkItemForVulnerabilityAsync(user.Id, vulnerability, repository);
+                if (issue != null)
+                {
+                    await JSRuntime.InvokeVoidAsync("console.info", $"Created work item #{issue.Number} for vulnerability {vulnerability.Id} in {repository}");
+                }
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("console.warn", $"Failed to create work item for vulnerability {vulnerability.Id}: {ex.Message}");
+            }
+        }
+    }
+}

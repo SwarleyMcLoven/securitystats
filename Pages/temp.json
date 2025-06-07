@@ -1,0 +1,68 @@
+{
+    "value": [
+        {
+            "type": "Microsoft.Security/assessments",
+            "id": "/subscriptions/fc3c1101-a0a7-4816-ad51-3739b8ddecad/resourcegroups/ts-qa/providers/microsoft.logic/workflows/ts-qa-logic-execute-datasync-web/providers/Microsoft.Security/assessments/91387f44-7e43-4ecc-55f0-46f5adee3dd5",
+            "name": "91387f44-7e43-4ecc-55f0-46f5adee3dd5",
+            "properties": {
+                "resourceDetails": {
+                    "Source": "Azure",
+                    "Id": "/subscriptions/fc3c1101-a0a7-4816-ad51-3739b8ddecad/resourcegroups/ts-qa/providers/microsoft.logic/workflows/ts-qa-logic-execute-datasync-web",
+                    "ResourceName": "ts-qa-logic-execute-datasync-web",
+                    "ResourceType": "workflows",
+                    "ResourceProvider": "microsoft.logic",
+                    "NativeResourceId": "/subscriptions/fc3c1101-a0a7-4816-ad51-3739b8ddecad/resourcegroups/ts-qa/providers/microsoft.logic/workflows/ts-qa-logic-execute-datasync-web"
+                },
+                "displayName": "Diagnostic logs in Logic Apps should be enabled",
+                "status": {
+                    "code": "Unhealthy"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Security/assessments",
+            "id": "/subscriptions/fc3c1101-a0a7-4816-ad51-3739b8ddecad/resourcegroups/ts-qa/providers/microsoft.web/sites/ts-qa-web-as/providers/Microsoft.Security/assessments/64b8637e-4e1d-76a9-0fc9-c1e487a97ed8",
+            "name": "64b8637e-4e1d-76a9-0fc9-c1e487a97ed8",
+            "properties": {
+                "resourceDetails": {
+                    "Source": "Azure",
+                    "Id": "/subscriptions/fc3c1101-a0a7-4816-ad51-3739b8ddecad/resourcegroups/ts-qa/providers/microsoft.web/sites/ts-qa-web-as",
+                    "ResourceName": "ts-qa-web-as",
+                    "ResourceType": "sites",
+                    "ResourceProvider": "microsoft.web",
+                    "NativeResourceId": "/subscriptions/fc3c1101-a0a7-4816-ad51-3739b8ddecad/resourcegroups/ts-qa/providers/microsoft.web/sites/ts-qa-web-as"
+                },
+                "displayName": "Remote debugging should be turned off for Web Applications",
+                "status": {
+                    "code": "Healthy"
+                },
+                "additionalData": {
+                    "Kind": "WebApp"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Security/assessments",
+            "id": "/subscriptions/fc3c1101-a0a7-4816-ad51-3739b8ddecad/resourcegroups/ts-qa/providers/microsoft.web/sites/startleftsecurity-internalchatbot/providers/Microsoft.Security/assessments/64b8637e-4e1d-76a9-0fc9-c1e487a97ed8",
+            "name": "64b8637e-4e1d-76a9-0fc9-c1e487a97ed8",
+            "properties": {
+                "resourceDetails": {
+                    "Source": "Azure",
+                    "Id": "/subscriptions/fc3c1101-a0a7-4816-ad51-3739b8ddecad/resourcegroups/ts-qa/providers/microsoft.web/sites/startleftsecurity-internalchatbot",
+                    "ResourceName": "startleftsecurity-internalchatbot",
+                    "ResourceType": "sites",
+                    "ResourceProvider": "microsoft.web",
+                    "NativeResourceId": "/subscriptions/fc3c1101-a0a7-4816-ad51-3739b8ddecad/resourcegroups/ts-qa/providers/microsoft.web/sites/startleftsecurity-internalchatbot"
+                },
+                "displayName": "Remote debugging should be turned off for Web Applications",
+                "status": {
+                    "code": "Healthy"
+                },
+                "additionalData": {
+                    "Kind": "WebApp"
+                }
+            }
+        }
+    ],
+    "nextLink": "https://management.azure.com/subscriptions/fc3c1101-a0a7-4816-ad51-3739b8ddecad/providers/Microsoft.Security/assessments?api-version=2020-01-01&NextLink=H4sIAAAAAAAACk2RXW%2faMBiF%2f0ty6UpOSEMdS1wcxyYYQUmyQkOrXZQWrLGSNhmEsKr77XOn8XFjvX7PeY6O5ccPZ%2fv2c1k63CG5lvzP8KArDPtmtZiRvvIWADK57%2fXc%2fI777l0e88DvuvrbjHdcrSa8G4ah72ZxnzO3n8YcxniL7B8EjF4OgEBqQ24TD1BgdiQYsCnGcbh%2b79TR4XVao6oq%2fU52NJpkMimqFX1paNgNOs1B%2fhIkoEtKm%2fuA0SigNCC%2fo2LV3NSU1oQ2NzSitNhuOtfH%2fBgTMmHJ6a4g1RSpuF%2fs%2f%2ffCHHPjgVppV%2bLsUyqbW%2fH52B8Z3vKcQD%2b0x3cIiFYZ0HWhjlyCW1Lg2cYN8wufbNMVBtXgwif1DqmRGM1OvtjmDTNp9NTyo9cLHiKB2O%2fKE%2f81tEjk%2bNxvDrNegu7H2Ab67EtVyQTrOVdO%2fVSapcM%2fnM2Prz%2f2wtiXknlW2Ty1p4WQ9gh95nx%2bfv8LqIil1hICAAA%3d_azure"
+}

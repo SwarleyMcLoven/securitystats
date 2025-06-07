@@ -1,0 +1,526 @@
+@page "/assets"
+@using SecurityStats.Models
+@using SecurityStats.Services
+@inject GitHubSecurityService GitHubService
+@inject AzureSecurityService AzureService
+@inject UserService UserService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Assets</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Assets</h1>
+    <div class="d-flex align-items-center">
+        <label for="orgSelect" class="me-2">Organization:</label>
+        <select id="orgSelect" class="form-select" style="width: auto;" @onchange="OnOrganizationChanged">
+            <option value="">All Organizations</option>
+            @foreach (var installation in installations)
+            {
+                <option value="@installation.InstallationId" selected="@(selectedInstallationId == installation.InstallationId)">
+                    @installation.OrganizationName
+                </option>
+            }
+        </select>
+        <button class="btn btn-outline-secondary btn-sm ms-2" @onclick="RefreshData">
+            <i class="oi oi-reload"></i>
+        </button>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center">
+        <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading assets...</span>
+        </div>
+        <p>Loading assets from GitHub and Azure...</p>
+    </div>
+}
+else
+{
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">GitHub Repositories</h5>
+                    <h2 class="text-primary">@repositories.Count</h2>
+                    <small class="text-muted">@repositories.Count(r => r.IsPrivate) private</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Azure Resources</h5>
+                    <h2 class="text-info">@azureResources.Count</h2>
+                    <small class="text-muted">@azureResources.GroupBy(r => r.ResourceGroup).Count() resource groups</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Organizations</h5>
+                    <h2 class="text-success">@installations.Count(i => i.IsActive)</h2>
+                    <small class="text-muted">GitHub integrations</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Last Updated</h5>
+                    <h6 class="text-secondary">@lastUpdated.ToString("HH:mm")</h6>
+                    <small class="text-muted">@lastUpdated.ToString("yyyy-MM-dd")</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5>GitHub Repositories (@repositories.Count)</h5>
+                    <div>
+                        <input type="text" class="form-control form-control-sm" placeholder="Search repositories..." @bind="repoSearchTerm" @oninput="FilterRepositories" style="width: 200px;">
+                    </div>
+                </div>
+                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                    @if (filteredRepositories.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Repository</th>
+                                        <th>Visibility</th>
+                                        <th>Last Updated</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var repo in filteredRepositories.Take(50))
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div>
+                                                    <strong>@repo.Name</strong>
+                                                    <br>
+                                                    <small class="text-muted">@repo.FullName</small>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="badge @(repo.IsPrivate ? "bg-warning" : "bg-success")">
+                                                    @(repo.IsPrivate ? "Private" : "Public")
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <small>@repo.LastUpdated.ToString("yyyy-MM-dd")</small>
+                                            </td>
+                                            <td>
+                                                <a href="@repo.Url" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                    <i class="oi oi-external-link"></i>
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        @if (filteredRepositories.Count > 50)
+                        {
+                            <div class="text-center text-muted">
+                                <small>Showing first 50 of @filteredRepositories.Count repositories</small>
+                            </div>
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(repoSearchTerm))
+                    {
+                        <div class="text-center text-muted">
+                            <p>No repositories match "@repoSearchTerm"</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted">
+                            <p>No repositories found.</p>
+                            <p><a href="/github-setup">Configure GitHub integration</a> to see repositories.</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h5>Azure Resources (@filteredAzureResources.Count)</h5>
+                        <div>
+                            <input type="text" class="form-control form-control-sm" placeholder="Search resources..." @bind="azureSearchTerm" @oninput="FilterAzureResources" style="width: 200px;">
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center flex-wrap gap-2">
+                        <div class="d-flex align-items-center">
+                            <label for="resourceGroupSelect" class="me-2 small">Resource Group:</label>
+                            <select id="resourceGroupSelect" class="form-select form-select-sm" style="width: auto;" @onchange="OnResourceGroupChanged">
+                                <option value="">All Resource Groups</option>
+                                @foreach (var resourceGroup in availableResourceGroups.OrderBy(rg => rg))
+                                {
+                                    <option value="@resourceGroup" selected="@(selectedResourceGroup.Equals(resourceGroup, StringComparison.OrdinalIgnoreCase))">
+                                        @resourceGroup (@azureResources.Count(r => r.ResourceGroup.Equals(resourceGroup, StringComparison.OrdinalIgnoreCase)))
+                                    </option>
+                                }
+                            </select>
+                            @if (!string.IsNullOrEmpty(selectedResourceGroup))
+                            {
+                                <button class="btn btn-sm btn-outline-secondary ms-1" @onclick="ClearResourceGroupFilter">
+                                    <i class="oi oi-x"></i>
+                                </button>
+                            }
+                        </div>
+                        
+                        <div class="d-flex align-items-center">
+                            <label for="resourceTypeSelect" class="me-2 small">Type:</label>
+                            <select id="resourceTypeSelect" class="form-select form-select-sm" style="width: auto;" @onchange="OnResourceTypeChanged">
+                                <option value="">All Types</option>
+                                @foreach (var resourceType in availableResourceTypes.OrderBy(rt => rt))
+                                {
+                                    <option value="@resourceType" selected="@(selectedResourceType.Equals(resourceType, StringComparison.OrdinalIgnoreCase))">
+                                        @GetResourceTypeDisplay(resourceType) (@azureResources.Count(r => r.Type.Equals(resourceType, StringComparison.OrdinalIgnoreCase)))
+                                    </option>
+                                }
+                            </select>
+                            @if (!string.IsNullOrEmpty(selectedResourceType))
+                            {
+                                <button class="btn btn-sm btn-outline-secondary ms-1" @onclick="ClearResourceTypeFilter">
+                                    <i class="oi oi-x"></i>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                    @if (filteredAzureResources.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Resource</th>
+                                        <th>Type</th>
+                                        <th>Resource Group</th>
+                                        <th>Location</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var resource in filteredAzureResources.Take(50))
+                                    {
+                                        <tr>
+                                            <td>
+                                                <strong>@resource.Name</strong>
+                                            </td>
+                                            <td>
+                                                <small class="badge bg-info">@GetResourceTypeDisplay(resource.Type)</small>
+                                            </td>
+                                            <td>
+                                                <small>@resource.ResourceGroup</small>
+                                            </td>
+                                            <td>
+                                                <small>@resource.Location</small>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        @if (filteredAzureResources.Count > 50)
+                        {
+                            <div class="text-center text-muted">
+                                <small>Showing first 50 of @filteredAzureResources.Count resources</small>
+                            </div>
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(azureSearchTerm))
+                    {
+                        <div class="text-center text-muted">
+                            <p>No resources match "@azureSearchTerm"</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted">
+                            <p>No Azure resources found.</p>
+                            <p>Check your Azure configuration in settings.</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (selectedInstallationId.HasValue || !string.IsNullOrEmpty(selectedResourceGroup) || !string.IsNullOrEmpty(selectedResourceType))
+    {
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="alert alert-info">
+                    <strong>Active Filters:</strong>
+                    @if (selectedInstallationId.HasValue)
+                    {
+                        var selectedInstallation = installations.FirstOrDefault(i => i.InstallationId == selectedInstallationId.Value);
+                        if (selectedInstallation != null)
+                        {
+                            <span class="badge bg-primary me-2">
+                                GitHub: @selectedInstallation.OrganizationName
+                                <button type="button" class="btn-close btn-close-white ms-1" @onclick="ClearFilter" style="font-size: 0.75rem;"></button>
+                            </span>
+                        }
+                    }
+                    @if (!string.IsNullOrEmpty(selectedResourceGroup))
+                    {
+                        <span class="badge bg-info me-2">
+                            Resource Group: @selectedResourceGroup
+                            <button type="button" class="btn-close btn-close-white ms-1" @onclick="ClearResourceGroupFilter" style="font-size: 0.75rem;"></button>
+                        </span>
+                    }
+                    @if (!string.IsNullOrEmpty(selectedResourceType))
+                    {
+                        <span class="badge bg-success me-2">
+                            Type: @GetResourceTypeDisplay(selectedResourceType)
+                            <button type="button" class="btn-close btn-close-white ms-1" @onclick="ClearResourceTypeFilter" style="font-size: 0.75rem;"></button>
+                        </span>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger mt-3">
+        @errorMessage
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private List<GitHubRepository> repositories = new();
+    private List<GitHubRepository> filteredRepositories = new();
+    private List<AzureResource> azureResources = new();
+    private List<AzureResource> filteredAzureResources = new();
+    private List<GitHubAppInstallation> installations = new();
+    private long? selectedInstallationId = null;
+    private string repoSearchTerm = string.Empty;
+    private string azureSearchTerm = string.Empty;
+    private string selectedResourceGroup = string.Empty;
+    private List<string> availableResourceGroups = new();
+    private string selectedResourceType = string.Empty;
+    private List<string> availableResourceTypes = new();
+    private string errorMessage = string.Empty;
+    private DateTime lastUpdated = DateTime.Now;
+    private string currentUserId = "demo-user"; // In real app, get from authentication
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAssets();
+    }
+
+    private async Task LoadAssets()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+
+        try
+        {
+            // Load installations first
+            var user = await UserService.GetOrCreateUserAsync(currentUserId);
+            installations = await UserService.GetUserGitHubInstallationsAsync(user.Id);
+            installations = installations.Where(i => i.IsActive).ToList();
+
+            // Load GitHub repositories
+            await LoadGitHubRepositories();
+
+            // Load Azure resources
+            await LoadAzureResources();
+
+            lastUpdated = DateTime.Now;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading assets: {ex.Message}";
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error loading assets: {ex}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadGitHubRepositories()
+    {
+        try
+        {
+            var allRepositories = new List<GitHubRepository>();
+
+            // Filter installations based on selection
+            var installationsToProcess = selectedInstallationId.HasValue 
+                ? installations.Where(i => i.InstallationId == selectedInstallationId.Value).ToList()
+                : installations;
+
+            foreach (var installation in installationsToProcess)
+            {
+                try
+                {
+                    //var user = await UserService.GetOrCreateUserAsync(currentUserId);
+                    var installationRepos = await GitHubService.GetRepositoriesAsync(installation.InstallationId);
+                    var orgRepositories = installationRepos.Where(r => r.FullName.StartsWith(installation.OrganizationName + "/"));
+                    allRepositories.AddRange(orgRepositories);
+                }
+                catch (Exception ex)
+                {
+                    await JSRuntime.InvokeVoidAsync("console.warn", $"Error loading repositories for {installation.OrganizationName}: {ex.Message}");
+                }
+            }
+
+            repositories = allRepositories.OrderBy(r => r.FullName).ToList();
+            FilterRepositories();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error loading GitHub repositories: {ex}");
+        }
+    }
+
+    private async Task LoadAzureResources()
+    {
+        try
+        {
+            azureResources = await AzureService.GetAzureResourcesAsync();
+            azureResources = azureResources.OrderBy(r => r.Name).ToList();
+            
+            // Update available resource groups (case insensitive)
+            availableResourceGroups = azureResources
+                .Select(r => r.ResourceGroup)
+                .Where(rg => !string.IsNullOrEmpty(rg))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            
+            // Update available resource types (case insensitive)
+            availableResourceTypes = azureResources
+                .Select(r => r.Type)
+                .Where(rt => !string.IsNullOrEmpty(rt))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            
+            FilterAzureResources();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error loading Azure resources: {ex}");
+        }
+    }
+
+    private void FilterRepositories()
+    {
+        if (string.IsNullOrEmpty(repoSearchTerm))
+        {
+            filteredRepositories = repositories;
+        }
+        else
+        {
+            filteredRepositories = repositories.Where(r => 
+                r.Name.Contains(repoSearchTerm, StringComparison.OrdinalIgnoreCase) ||
+                r.FullName.Contains(repoSearchTerm, StringComparison.OrdinalIgnoreCase)
+            ).ToList();
+        }
+        StateHasChanged();
+    }
+
+    private void FilterAzureResources()
+    {
+        var filtered = azureResources.AsEnumerable();
+        
+        // Apply resource group filter
+        if (!string.IsNullOrEmpty(selectedResourceGroup))
+        {
+            filtered = filtered.Where(r => r.ResourceGroup.Equals(selectedResourceGroup, StringComparison.OrdinalIgnoreCase));
+        }
+        
+        // Apply resource type filter
+        if (!string.IsNullOrEmpty(selectedResourceType))
+        {
+            filtered = filtered.Where(r => r.Type.Equals(selectedResourceType, StringComparison.OrdinalIgnoreCase));
+        }
+        
+        // Apply search term filter
+        if (!string.IsNullOrEmpty(azureSearchTerm))
+        {
+            filtered = filtered.Where(r => 
+                r.Name.Contains(azureSearchTerm, StringComparison.OrdinalIgnoreCase) ||
+                r.Type.Contains(azureSearchTerm, StringComparison.OrdinalIgnoreCase) ||
+                r.ResourceGroup.Contains(azureSearchTerm, StringComparison.OrdinalIgnoreCase)
+            );
+        }
+        
+        filteredAzureResources = filtered.ToList();
+        StateHasChanged();
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadAssets();
+    }
+
+    private async Task OnOrganizationChanged(ChangeEventArgs e)
+    {
+        if (long.TryParse(e.Value?.ToString(), out var installationId))
+        {
+            selectedInstallationId = installationId;
+        }
+        else
+        {
+            selectedInstallationId = null;
+        }
+        
+        await LoadGitHubRepositories();
+    }
+
+    private async Task ClearFilter()
+    {
+        selectedInstallationId = null;
+        await LoadGitHubRepositories();
+    }
+
+    private void OnResourceGroupChanged(ChangeEventArgs e)
+    {
+        selectedResourceGroup = e.Value?.ToString() ?? string.Empty;
+        FilterAzureResources();
+    }
+
+    private void ClearResourceGroupFilter()
+    {
+        selectedResourceGroup = string.Empty;
+        FilterAzureResources();
+    }
+
+    private void OnResourceTypeChanged(ChangeEventArgs e)
+    {
+        selectedResourceType = e.Value?.ToString() ?? string.Empty;
+        FilterAzureResources();
+    }
+
+    private void ClearResourceTypeFilter()
+    {
+        selectedResourceType = string.Empty;
+        FilterAzureResources();
+    }
+
+    private string GetResourceTypeDisplay(string resourceType)
+    {
+        var parts = resourceType.Split('/');
+        return parts.Length > 1 ? parts[^1] : resourceType;
+    }
+}

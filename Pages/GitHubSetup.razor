@@ -1,0 +1,304 @@
+@page "/github-setup"
+@using SecurityStats.Models
+@using SecurityStats.Services
+@inject UserService UserService
+@inject GitHubAppService GitHubAppService
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+
+<PageTitle>GitHub App Setup</PageTitle>
+
+<h1>GitHub App Configuration</h1>
+
+@if (isLoading)
+{
+    <div class="text-center">
+        <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p>Loading GitHub configuration...</p>
+    </div>
+}
+else
+{
+    @if (currentInstallation == null)
+    {
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Install GitHub App</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>To use SecurityStats with your GitHub repositories, you need to install our GitHub App.</p>
+
+                        @if (!GitHubAppService.IsConfigured())
+                        {
+                            <div class="alert alert-warning">
+                                <i class="oi oi-warning"></i> GitHub App is not configured in appsettings.json
+                            </div>
+                            <p>Please configure your GitHub App in the appsettings.json file and restart the application.</p>
+                            <a href="/settings" class="btn btn-primary">Go to Settings</a>
+                        }
+                        else
+                        {
+                            <div class="alert alert-success">
+                                <i class="oi oi-check"></i> GitHub App is configured
+                            </div>
+                            <p>Install the GitHub App to your account or organization:</p>
+                            <button class="btn btn-success" @onclick="StartInstallationFlow">
+                                Install GitHub App
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h6>How to Create a GitHub App</h6>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li>Go to GitHub Settings → Developer settings → GitHub Apps</li>
+                            <li>Click "New GitHub App"</li>
+                            <li>Fill in the required details:
+                                <ul>
+                                    <li>App name: SecurityStats</li>
+                                    <li>Homepage URL: Your app URL</li>
+                                    <li>Callback URL: <code>@(Navigation.BaseUri)github-callback</code></li>
+                                </ul>
+                            </li>
+                            <li>Set permissions:
+                                <ul>
+                                    <li>Repository permissions:
+                                        <ul>
+                                            <li>Contents: Read</li>
+                                            <li>Metadata: Read</li>
+                                            <li>Vulnerability alerts: Read</li>
+                                            <li>Security events: Read</li>
+                                        </ul>
+                                    </li>
+                                </ul>
+                            </li>
+                            <li>Generate a private key</li>
+                            <li>Note the App ID and Client ID</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>GitHub Installations (@installations.Count)</h5>
+                    </div>
+                    <div class="card-body">
+                        @if (installations.Any())
+                        {
+                            <div class="row">
+                                @foreach (var installation in installations)
+                                {
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card">
+                                            <div class="card-body">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div>
+                                                        <h6 class="card-title">@installation.OrganizationName</h6>
+                                                        <p class="card-text">
+                                                            <small class="text-muted">
+                                                                @installation.AccountType • @installation.RepositoryCount repositories
+                                                            </small>
+                                                        </p>
+                                                    </div>
+                                                    <span class="badge @GetStatusBadgeClass(installation.Status)">@installation.Status</span>
+                                                </div>
+
+                                                <div class="mt-2">
+                                                    <small class="text-muted">
+                                                        Installed: @installation.InstalledAt.ToString("yyyy-MM-dd")
+                                                    </small>
+                                                </div>
+
+                                                <div class="mt-3">
+                                                    <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => TestConnection(installation)">
+                                                        Test Connection
+                                                    </button>
+                                                    <button class="btn btn-sm btn-outline-warning me-2" @onclick="() => RefreshToken(installation)">
+                                                        Refresh Token
+                                                    </button>
+                                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveInstallation(installation)">
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-center text-muted">
+                                <p>No GitHub installations found.</p>
+                            </div>
+                        }
+
+                        <div class="mt-3">
+                            <button class="btn btn-success" @onclick="StartInstallationFlow">
+                                <i class="oi oi-plus"></i> Add New Installation
+                            </button>
+                            <a href="/settings" class="btn btn-outline-primary ms-2">
+                                <i class="oi oi-cog"></i> Manage All Installations
+                            </a>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(connectionTestResult))
+                        {
+                            <div class="mt-3 alert alert-info">
+                                @connectionTestResult
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger mt-3">
+        @errorMessage
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private List<GitHubAppInstallation> installations = new();
+    private string errorMessage = string.Empty;
+    private string connectionTestResult = string.Empty;
+    private string currentUserId = "demo-user"; // In real app, get from authentication
+    private GitHubAppInstallation? currentInstallation = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentInstallation();
+    }
+
+    private async Task LoadCurrentInstallation()
+    {
+        isLoading = true;
+        try
+        {
+            var user = await UserService.GetOrCreateUserAsync(currentUserId);
+            installations = await UserService.GetUserGitHubInstallationsAsync(user.Id);
+            installations = installations.Where(i => i.IsActive).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading installations: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+
+    private async Task StartInstallationFlow()
+    {
+        try
+        {
+            var installUrl = await GitHubAppService.GetInstallationUrlAsync();
+            await JSRuntime.InvokeVoidAsync("open", installUrl, "_blank");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error starting installation: {ex.Message}";
+        }
+    }
+
+    private async Task TestConnection(GitHubAppInstallation installation)
+    {
+        try
+        {
+            var repositories = await GitHubAppService.GetInstallationRepositoriesAsync(installation.InstallationId);
+            installation.Status = InstallationStatus.Active;
+            installation.RepositoryCount = repositories.Count;
+            installation.LastSyncAt = DateTime.UtcNow;
+            await UserService.SaveGitHubInstallationAsync(currentUserId, installation);
+            
+            connectionTestResult = $"Connection successful for {installation.OrganizationName}! Found {repositories.Count} repositories.";
+            await LoadCurrentInstallation();
+        }
+        catch (Exception ex)
+        {
+            installation.Status = InstallationStatus.Error;
+            installation.StatusMessage = ex.Message;
+            await UserService.SaveGitHubInstallationAsync(currentUserId, installation);
+            
+            connectionTestResult = $"Connection failed for {installation.OrganizationName}: {ex.Message}";
+            await LoadCurrentInstallation();
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task RefreshToken(GitHubAppInstallation installation)
+    {
+        try
+        {
+            await GitHubAppService.RefreshInstallationTokenAsync(installation);
+            connectionTestResult = $"Access token refreshed successfully for {installation.OrganizationName}!";
+            await LoadCurrentInstallation();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error refreshing token for {installation.OrganizationName}: {ex.Message}";
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task RemoveInstallation(GitHubAppInstallation installation)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to remove the installation for {installation.OrganizationName}?"))
+        {
+            try
+            {
+                installation.IsActive = false;
+                installation.Status = InstallationStatus.Removed;
+                await UserService.SaveGitHubInstallationAsync(currentUserId, installation);
+                await LoadCurrentInstallation();
+                connectionTestResult = $"Installation for {installation.OrganizationName} has been removed.";
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Error removing installation: {ex.Message}";
+            }
+            
+            StateHasChanged();
+        }
+    }
+
+    private string GetStatusBadgeClass(InstallationStatus status)
+    {
+        return status switch
+        {
+            InstallationStatus.Active => "bg-success",
+            InstallationStatus.Suspended => "bg-warning",
+            InstallationStatus.Removed => "bg-secondary",
+            InstallationStatus.Error => "bg-danger",
+            InstallationStatus.TokenExpired => "bg-warning",
+            InstallationStatus.ConfigurationError => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
+}
